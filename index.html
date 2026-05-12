@@ -93,9 +93,9 @@
                 setLogs(prev => [...prev, { time, text, type }]);
             };
 
-            const fetchTemplates = async () => {
+            const fetchTemplates = async (userStr) => {
                 try {
-                    const res = await fetch(GAS_URL + "?action=getTemplates");
+                    const res = await fetch(GAS_URL + "?action=getTemplates&username=" + encodeURIComponent(userStr));
                     const data = await res.json();
                     if (Array.isArray(data)) {
                         setTemplates(data);
@@ -119,7 +119,7 @@
                         if (data.success) {
                             setUsername(loginInput.trim());
                             setIsLoggedIn(true);
-                            fetchTemplates();
+                            fetchTemplates(loginInput.trim());
                         } else {
                             alert("Username tidak ditemukan di Google Spreadsheet!");
                         }
@@ -339,7 +339,7 @@
                     await fetch(GAS_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: 'addTemplate', template: newTemplate })
+                        body: JSON.stringify({ action: 'addTemplate', username: username, template: newTemplate })
                     });
                     addLog(`Template "${newTemplate.title}" tersimpan.`, 'success');
                 } catch(error) {
@@ -353,7 +353,7 @@
                     await fetch(GAS_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action: 'deleteTemplate', title: title })
+                        body: JSON.stringify({ action: 'deleteTemplate', username: username, title: title })
                     });
                     addLog(`Template "${title}" dihapus.`, 'info');
                 } catch(error) {
