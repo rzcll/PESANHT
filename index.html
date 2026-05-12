@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go WA HT Dashboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome untuk Ikon -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (Untuk menerjemahkan JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- SheetJS (Untuk Parsing Excel) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar:hover::-webkit-scrollbar-thumb { background-color: #94a3b8; }
+        body { margin: 0; padding: 0; overflow: hidden; }
+    </style>
+</head>
+<body class="bg-slate-300 text-slate-800 font-sans">
+    
+    <!-- Wadah Aplikasi React -->
+    <div id="root"></div>
+
+    <!-- Script Aplikasi Utama -->
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+
+        // URL GOOGLE APPS SCRIPT ANDA
+        const GAS_URL = "https://script.google.com/macros/s/AKfycbyRM6OKjT-XSVlYDarhjbRviUj7PkkJ4C0a6qGBLQ_I1tjqbh30_TgGK5hBrL1OjK8WRA/exec";
+
+        // Komponen Helper untuk Ikon FontAwesome (Pengganti Lucide)
+        const Icon = ({ name, size = 16, className = "" }) => {
+            let sizeClass = 'text-base';
+            if (size >= 40) sizeClass = 'text-5xl';
+            else if (size >= 32) sizeClass = 'text-4xl';
+            else if (size >= 28) sizeClass = 'text-3xl';
+            else if (size >= 24) sizeClass = 'text-2xl';
+            else if (size >= 20) sizeClass = 'text-xl';
+            else if (size >= 18) sizeClass = 'text-lg';
+            else if (size <= 14) sizeClass = 'text-sm';
+            
+            return <i className={`fa-solid ${name} ${sizeClass} ${className}`}></i>;
+        };
+
+        const App = () => {
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [isLoggingIn, setIsLoggingIn] = useState(false);
+            const [loginInput, setLoginInput] = useState('');
+            const [username, setUsername] = useState('');
+
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [contacts, setContacts] = useState([]);
+            const [message, setMessage] = useState('');
+            
+            const [delay1, setDelay1] = useState(30);
+            const [delay2, setDelay2] = useState(45);
+            const [delay3, setDelay3] = useState(60);
+
+            const [isSending, setIsSending] = useState(false);
+            const [logs, setLogs] = useState([]);
+            const [stats, setStats] = useState({ total: 0, sent: 0, failed: 0, pending: 0 });
+            
+            const [templates, setTemplates] = useState([]);
+            const [newTemplateTitle, setNewTemplateTitle] = useState('');
+            const [newTemplateContent, setNewTemplateContent] = useState('');
+
+            const [waConnected, setWaConnected] = useState(false);
+            const [showQR, setShowQR] = useState(false);
+
+            const fileInputRef = useRef(null);
+            const epusInputRef = useRef(null);
+            const logEndRef = useRef(null);
+
+            useEffect(() => {
+                logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, [logs]);
+
+            const addLog = (text, type = 'info') => {
+                const time = new Date().toLocaleTimeString();
+                setLogs(prev => [...prev, { time, text, type }]);
+            };
+
+            const fetchTemplates = async () => {
+                try {
+                    const res = await fetch(GAS_URL + "?action=getTemplates");
+                    const data = await res.json();
+                    if (Array.isArray(data)) {
+                        setTemplates(data);
+                    }
+                } catch (error) {
+                    console.error("Gagal memuat template dari database", error);
+                }
+            };
+
+            const handleLogin = async (e) => {
+                e.preventDefault();
+                if (loginInput.trim() !== '') {
+                    setIsLoggingIn(true);
+                    try {
+                        const res = await fetch(GAS_URL, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                            body: JSON.stringify({ action: 'login', username: loginInput.trim() })
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                            setUsername(loginInput.trim());
+                            setIsLoggedIn(true);
+                            fetchTemplates();
+                        } else {
+                            alert("Username tidak ditemukan di Google Spreadsheet!");
+                        }
+                    } catch (error) {
+                        alert("Gagal terhubung ke Database. Pastikan Anda sudah memasukkan URL Google Script yang benar.");
+                    } finally {
+                        setIsLoggingIn(false);
+                    }
+                }
+            };
+
+            const showBanner = (count, source = "Excel") => {
+                const banner = document.createElement('div');
+                banner.className = 'fixed top-5 left-1/2 -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg z-[9999] font-bold flex gap-2 items-center transition-opacity duration-500';
+                banner.innerHTML = `<i class="fa-solid fa-circle-check"></i> ${count} Data Berhasil Diunggah dari ${source}!`;
+                document.body.appendChild(banner);
+                setTimeout(() => {
+                    banner.style.opacity = '0';
+                    setTimeout(() => banner.remove(), 500);
+                }, 3000);
+            };
+
+            const downloadTemplate = async () => {
+                const ws = window.XLSX.utils.aoa_to_sheet([
+                    ["No", "Nama", "Jenis Kelamin", "Nomor WhatsApp", "Alamat"],
+                    ["1", "Budi Santoso", "Laki-laki", "081234567890", "Jakarta Pusat"],
+                    ["2", "Siti Aminah", "Perempuan", "81298765432", "Bandung Selatan"]
+                ]);
+                const wb = window.XLSX.utils.book_new();
+                window.XLSX.utils.book_append_sheet(wb, ws, "Target");
+                window.XLSX.writeFile(wb, "Template_Kontak_WA.xlsx");
+            };
+
+            const formatPhoneNumber = (rawPhone) => {
+                let phoneStr = rawPhone?.toString().replace(/\D/g, '') || "";
+                if (phoneStr.startsWith('0')) {
+                    phoneStr = '+62' + phoneStr.substring(1);
+                } else if (phoneStr.startsWith('8')) {
+                    phoneStr = '+62' + phoneStr;
+                } else if (phoneStr.startsWith('62')) {
+                    phoneStr = '+' + phoneStr;
+                }
+                return phoneStr;
+            };
+
+            const getPanggilan = (genderStr) => {
+                let gender = genderStr?.toString().trim().toLowerCase() || "";
+                if (gender === "laki-laki" || gender === "pria" || gender === "l") return "Bapak";
+                if (gender === "perempuan" || gender === "wanita" || gender === "p") return "Ibu";
+                return "Kakak";
+            };
+
+            const handleFileUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const bstr = evt.target.result;
+                    const wb = window.XLSX.read(bstr, { type: 'binary' });
+                    const wsname = wb.SheetNames[0];
+                    const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wsname]);
+
+                    const parsedContacts = data.map((row, index) => {
+                        return {
+                            id: index + 1,
+                            name: row["Nama"] || "Tanpa Nama",
+                            phone: formatPhoneNumber(row["Nomor WhatsApp"]),
+                            panggilan: getPanggilan(row["Jenis Kelamin"]),
+                            address: row["Alamat"] || "-",
+                            status: 'pending'
+                        };
+                    }).filter(c => c.phone !== "");
+
+                    setContacts(parsedContacts);
+                    setStats({ total: parsedContacts.length, sent: 0, failed: 0, pending: parsedContacts.length });
+                    addLog(`Berhasil mengimpor ${parsedContacts.length} kontak dari Excel`, 'success');
+                    showBanner(parsedContacts.length, "Excel Standar");
+                };
+                reader.readAsBinaryString(file);
+                e.target.value = null; 
+            };
+
+            const handleEpusUpload = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const bstr = evt.target.result;
+                    const wb = window.XLSX.read(bstr, { type: 'binary' });
+                    const wsname = wb.SheetNames[0];
+                    const data = window.XLSX.utils.sheet_to_json(wb.Sheets[wsname], { header: 1, defval: "" });
+
+                    let parsedContacts = [];
+                    let currentId = 1;
+
+                    for (let i = 4; i < data.length; i++) {
+                        const row = data[i];
+                        if (!row) continue;
+
+                        const rawNama = row[1] || "";         
+                        const rawGender = row[4] || "";       
+                        const rawAlamat = row[10] || "";      
+                        const rawWA = row[14] || "";          
+
+                        let phoneStr = formatPhoneNumber(rawWA);
+                        if (!phoneStr && !rawNama) continue; 
+
+                        parsedContacts.push({
+                            id: currentId++,
+                            name: rawNama || "Tanpa Nama",
+                            phone: phoneStr,
+                            panggilan: getPanggilan(rawGender),
+                            address: rawAlamat || "-",
+                            status: 'pending'
+                        });
+                    }
+
+                    parsedContacts = parsedContacts.filter(c => c.phone !== "");
+
+                    setContacts(parsedContacts);
+                    setStats({ total: parsedContacts.length, sent: 0, failed: 0, pending: parsedContacts.length });
+                    addLog(`Berhasil memproses mapping ${parsedContacts.length} kontak dari data Epus`, 'success');
+                    showBanner(parsedContacts.length, "Data Epus");
+                };
+                reader.readAsBinaryString(file);
+                e.target.value = null;
+            };
+
+            const insertVariable = (variableName) => {
+                const textarea = document.getElementById('message-textarea');
+                if (!textarea) return;
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const currentText = message;
+                const newText = currentText.substring(0, start) + `[${variableName}]` + currentText.substring(end);
+                setMessage(newText);
+                setTimeout(() => {
+                    textarea.focus();
+                    textarea.setSelectionRange(start + variableName.length + 2, start + variableName.length + 2);
+                }, 10);
+            };
+
+            const processSpintaxAndVars = (text, contact) => {
+                let result = text;
+                const spintaxRegex = /\{([^}]+)\}/g;
+                result = result.replace(spintaxRegex, (match, contents) => {
+                    const options = contents.split('|');
+                    return options[Math.floor(Math.random() * options.length)];
+                });
+                result = result.replace(/\[Nama\]/gi, contact.name);
+                result = result.replace(/\[Alamat\]/gi, contact.address);
+                result = result.replace(/\[Panggilan\]/gi, contact.panggilan);
+                return result;
+            };
+
+            const startCampaign = async () => {
+                if (contacts.length === 0) return alert("Upload target nomor terlebih dahulu.");
+                if (!message.trim()) return alert("Pesan tidak boleh kosong.");
+
+                setIsSending(true);
+                addLog("==============================", "info");
+                addLog("🚀 MEMULAI KAMPANYE BROADCAST", "info");
+                addLog(`Total Target: ${contacts.length} nomor`, "info");
+                addLog("==============================", "info");
+
+                let currentSent = 0;
+                let currentFailed = 0;
+
+                for (let i = 0; i < contacts.length; i++) {
+                    if (!isSending) break; 
+                    
+                    const contact = contacts[i];
+                    setContacts(prev => prev.map((c, idx) => idx === i ? { ...c, status: 'processing' } : c));
+                    
+                    const finalMessage = processSpintaxAndVars(message, contact);
+                    addLog(`[PROCESS] Menyiapkan pesan untuk ${contact.phone} (${contact.name})...`, 'processing');
+
+                    let currentDelay = delay1;
+                    let delayIndex = (i % 3) + 1;
+                    if (delayIndex === 1) currentDelay = delay1;
+                    else if (delayIndex === 2) currentDelay = delay2;
+                    else if (delayIndex === 3) currentDelay = delay3;
+
+                    addLog(`⏱️ Menunggu jeda ${currentDelay} detik (Putaran Jeda ke-${delayIndex})...`, 'info');
+                    await new Promise(resolve => setTimeout(resolve, currentDelay * 1000));
+
+                    try {
+                        // Dummy WAHA API execution
+                        if (Math.random() > 0.95) throw new Error("Nomor tidak aktif");
+                        setContacts(prev => prev.map((c, idx) => idx === i ? { ...c, status: 'sent' } : c));
+                        currentSent++;
+                        addLog(`[SUCCESS] Terkirim: ${contact.phone}`, 'success');
+                    } catch (error) {
+                        setContacts(prev => prev.map((c, idx) => idx === i ? { ...c, status: 'failed' } : c));
+                        currentFailed++;
+                        addLog(`[ERROR] Gagal: ${contact.phone} - ${error.message}`, 'error');
+                    }
+
+                    setStats(prev => ({ ...prev, sent: currentSent, failed: currentFailed, pending: prev.total - currentSent - currentFailed }));
+                }
+
+                setIsSending(false);
+                addLog("🛑 KAMPANYE SELESAI", "success");
+                addLog("==============================", "info");
+            };
+
+            const handleSaveTemplate = async () => {
+                if (!newTemplateTitle || !newTemplateContent) return;
+                const newTemplate = { title: newTemplateTitle, content: newTemplateContent };
+                setTemplates([...templates, newTemplate]);
+                setNewTemplateTitle('');
+                setNewTemplateContent('');
+                
+                try {
+                    await fetch(GAS_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'addTemplate', template: newTemplate })
+                    });
+                    addLog(`Template "${newTemplate.title}" tersimpan.`, 'success');
+                } catch(error) {
+                    addLog(`Gagal menyimpan template.`, 'error');
+                }
+            };
+
+            const handleDeleteTemplate = async (title) => {
+                setTemplates(templates.filter(t => t.title !== title));
+                try {
+                    await fetch(GAS_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'deleteTemplate', title: title })
+                    });
+                    addLog(`Template "${title}" dihapus.`, 'info');
+                } catch(error) {
+                    addLog(`Gagal menghapus template.`, 'error');
+                }
+            };
+
+            if (!isLoggedIn) {
+                return (
+                    <div className="flex h-screen w-screen items-center justify-center relative overflow-hidden bg-slate-900">
+                        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/20 blur-[120px]"></div>
+                        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-blue-600/20 blur-[120px]"></div>
+                        
+                        <div className="w-full max-w-md bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-3xl shadow-2xl relative z-10">
+                            <div className="flex justify-center mb-6">
+                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/50">
+                                    <Icon name="fa-chart-line" size={32} />
+                                </div>
+                            </div>
+                            <h1 className="text-3xl font-black text-white text-center mb-2">Go WA HT</h1>
+                            <p className="text-slate-300 text-center text-sm mb-8">Masuk untuk memulai kampanye pesan massal Anda.</p>
+                            
+                            <form onSubmit={handleLogin} className="space-y-5">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Username Akses</label>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                                            <Icon name="fa-user-group" size={18} />
+                                        </div>
+                                        <input type="text" value={loginInput} onChange={(e) => setLoginInput(e.target.value)} placeholder="Ketik username Anda..." className="w-full bg-slate-800/50 border border-slate-600 text-white pl-11 pr-4 py-3 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-slate-500" required disabled={isLoggingIn} />
+                                    </div>
+                                </div>
+                                <button type="submit" disabled={isLoggingIn} className={`w-full ${isLoggingIn ? 'bg-indigo-400' : 'bg-indigo-600 hover:bg-indigo-500'} text-white font-bold py-3.5 rounded-xl transition-colors shadow-lg flex items-center justify-center gap-2`}>
+                                    {isLoggingIn ? 'Memeriksa...' : <>Masuk ke Dashboard <Icon name="fa-arrow-right-to-bracket" size={18} /></>}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex h-screen bg-slate-300 text-slate-800 font-sans overflow-hidden">
+                    <div className="fixed top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-300/30 blur-[100px] pointer-events-none z-0"></div>
+                    <div className="fixed bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-300/30 blur-[100px] pointer-events-none z-0"></div>
+
+                    {/* Sidebar */}
+                    <div className="w-72 bg-slate-100/80 backdrop-blur-xl border-r border-slate-200/60 flex flex-col z-10 shadow-lg relative">
+                        <div className="p-8 pb-4 flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600 to-purple-700 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                                <Icon name="fa-chart-line" size={24} />
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-600">Go WA HT</h1>
+                                <p className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">WAHA Integration</p>
+                            </div>
+                        </div>
+                        <div className="px-6 py-2">
+                            <div className="bg-white/60 border border-slate-200/60 rounded-xl p-3 flex items-center gap-3 shadow-sm">
+                                <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-700 font-black text-lg">
+                                    {username.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex-1 overflow-hidden">
+                                    <p className="text-sm font-bold text-slate-800 truncate">{username}</p>
+                                    <p className="text-[10px] text-green-600 font-bold tracking-wide uppercase">● System Active</p>
+                                </div>
+                            </div>
+                        </div>
+                        <nav className="flex-1 p-6 space-y-2">
+                            {[
+                                { id: 'dashboard', icon: 'fa-chart-line', label: 'Dashboard' },
+                                { id: 'campaign', icon: 'fa-paper-plane', label: 'Kirim Pesan' },
+                                { id: 'templates', icon: 'fa-file-excel', label: 'Template Pesan' },
+                                { id: 'settings', icon: 'fa-gear', label: 'Pengaturan' },
+                            ].map((item) => (
+                                <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl transition-all duration-300 ${activeTab === item.id ? 'bg-white shadow-md border border-slate-200 text-indigo-600 font-bold' : 'text-slate-500 font-medium hover:bg-slate-200/50 hover:text-slate-800'}`}>
+                                    <Icon name={item.icon} size={20} /> {item.label}
+                                </button>
+                            ))}
+                        </nav>
+                        <div className="p-6">
+                            <button onClick={() => setIsLoggedIn(false)} className="w-full flex items-center justify-center gap-2 px-4 py-3 text-sm text-red-500 hover:bg-red-50 hover:text-red-600 font-bold rounded-xl transition-colors">
+                                <Icon name="fa-arrow-right-to-bracket" size={16} className="rotate-180" /> Keluar
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div className="flex-1 p-8 overflow-y-auto z-10 relative">
+                        <div className="max-w-6xl mx-auto">
+                            
+                            {}
+                            {activeTab === 'dashboard' && (
+                                <div className="space-y-8">
+                                    <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-900 rounded-3xl p-8 shadow-xl shadow-indigo-900/10 border border-indigo-500/20 relative overflow-hidden">
+                                        <div className="relative z-10">
+                                            <h2 className="text-3xl font-black text-white mb-2">Selamat Datang, {username}! 👋</h2>
+                                            <p className="text-indigo-200/80 max-w-xl text-sm leading-relaxed">Sistem Go WA HT siap digunakan untuk pengiriman pesan massal. Berjalan dalam mode lokal yang terhubung ke Cloud Sheet.</p>
+                                            <button onClick={() => setActiveTab('campaign')} className="mt-6 bg-white text-indigo-900 px-6 py-3 rounded-xl font-bold text-sm hover:bg-indigo-50 transition-colors shadow-lg flex items-center gap-2">
+                                                Mulai Kirim Pesan <Icon name="fa-paper-plane" size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div className="bg-slate-100/80 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-slate-200/60 flex items-center gap-5 hover:-translate-y-1 transition-transform">
+                                            <div className="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-inner">
+                                                <Icon name="fa-chart-line" size={28} />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-slate-500 uppercase">Kampanye</p>
+                                                <p className="text-3xl font-black text-slate-800">12</p>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-100/80 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-slate-200/60 flex items-center gap-5 hover:-translate-y-1 transition-transform">
+                                            <div className="w-16 h-16 rounded-2xl bg-green-100 flex items-center justify-center text-green-600 shadow-inner">
+                                                <Icon name="fa-circle-check" size={28} />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-slate-500 uppercase">Terkirim</p>
+                                                <p className="text-3xl font-black text-slate-800">{stats.sent > 0 ? stats.sent : 1420}</p>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-100/80 backdrop-blur-md rounded-3xl p-6 shadow-sm border border-slate-200/60 flex items-center gap-5 hover:-translate-y-1 transition-transform">
+                                            <div className="w-16 h-16 rounded-2xl bg-purple-100 flex items-center justify-center text-purple-600 shadow-inner">
+                                                <Icon name="fa-shield-halved" size={28} />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-semibold text-slate-500 uppercase">Keamanan</p>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></div>
+                                                    <p className="text-lg font-bold text-slate-800">Aman</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'campaign' && (
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                    <div className="lg:col-span-7 space-y-6">
+                                        <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl shadow-sm border border-slate-200/60 p-7">
+                                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                                                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                                    <div className="bg-indigo-100 p-2 rounded-xl text-indigo-600"><Icon name="fa-user-group" size={20} /></div>Target Nomor
+                                                </h3>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button onClick={downloadTemplate} className="flex items-center gap-2 px-4 py-2 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold shadow-lg transition-all hover:-translate-y-0.5">
+                                                        <Icon name="fa-file-arrow-down" size={16} /> Template
+                                                    </button>
+                                                    <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold shadow-lg transition-all hover:-translate-y-0.5">
+                                                        <Icon name="fa-file-arrow-up" size={16} /> Upload Excel
+                                                    </button>
+                                                    <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept=".xlsx, .xls, .csv" className="hidden" />
+                                                    <button onClick={() => epusInputRef.current?.click()} className="flex items-center gap-2 px-4 py-2 text-sm bg-teal-500 hover:bg-teal-600 text-white rounded-xl font-bold shadow-lg transition-all hover:-translate-y-0.5">
+                                                        <Icon name="fa-file-arrow-up" size={16} /> Upload Epus
+                                                    </button>
+                                                    <input type="file" ref={epusInputRef} onChange={handleEpusUpload} accept=".xlsx, .xls, .csv" className="hidden" />
+                                                </div>
+                                            </div>
+                                            {contacts.length === 0 ? (
+                                                <div className="h-48 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center text-slate-500 bg-slate-200/50">
+                                                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center shadow-sm mb-3 text-slate-400">
+                                                        <Icon name="fa-file-excel" size={32} />
+                                                    </div>
+                                                    <p className="text-sm font-bold text-slate-700">Belum ada target nomor.</p>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    <div className="bg-slate-800 text-white p-3 rounded-xl flex justify-between items-center shadow-md">
+                                                        <div className="flex gap-4">
+                                                            <div className="flex items-center gap-2"><span className="text-xs font-bold text-slate-300">Total: {contacts.length}</span></div>
+                                                            <div className="flex items-center gap-2"><span className="text-xs font-bold text-slate-300">Antrean: {stats.pending}</span></div>
+                                                        </div>
+                                                        <button onClick={() => {setContacts([]); setStats({total:0, sent:0, failed:0, pending:0});}} className="text-xs font-bold bg-white/20 hover:bg-red-500/80 px-3 py-1.5 rounded-lg transition-colors">Bersihkan Data</button>
+                                                    </div>
+                                                    <div className="h-48 overflow-y-auto border border-slate-200 rounded-2xl bg-slate-50 shadow-inner custom-scrollbar relative">
+                                                        <table className="w-full text-left text-sm text-slate-600">
+                                                            <thead className="text-[11px] font-bold text-slate-400 uppercase bg-slate-100/90 backdrop-blur-md sticky top-0 z-10 border-b border-slate-200">
+                                                                <tr>
+                                                                    <th className="px-5 py-3">No</th>
+                                                                    <th className="px-5 py-3">Nama</th>
+                                                                    <th className="px-5 py-3">Alamat</th>
+                                                                    <th className="px-5 py-3">WhatsApp</th>
+                                                                    <th className="px-5 py-3 text-center">Status</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-100">
+                                                                {contacts.map((c, i) => (
+                                                                    <tr key={c.id} className="hover:bg-white transition-colors">
+                                                                        <td className="px-5 py-3 text-slate-400 font-mono text-xs">{i + 1}</td>
+                                                                        <td className="px-5 py-3 font-bold text-slate-700"><span className="text-xs font-semibold text-indigo-500 mr-1 bg-indigo-50 px-2 py-0.5 rounded">{c.panggilan}</span> {c.name}</td>
+                                                                        <td className="px-5 py-3 text-xs text-slate-500">{c.address}</td>
+                                                                        <td className="px-5 py-3 font-mono text-xs">{c.phone}</td>
+                                                                        <td className="px-5 py-3 text-center">
+                                                                            {c.status === 'pending' && <span className="inline-block w-2 h-2 rounded-full bg-slate-300"></span>}
+                                                                            {c.status === 'processing' && <span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>}
+                                                                            {c.status === 'sent' && <Icon name="fa-circle-check" size={16} className="text-green-500" />}
+                                                                            {c.status === 'failed' && <Icon name="fa-circle-xmark" size={16} className="text-red-500" />}
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl shadow-sm border border-slate-200/60 p-7">
+                                            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4"><div className="bg-purple-100 p-2 rounded-xl text-purple-600"><Icon name="fa-message" size={20} /></div>Konten Pesan</h3>
+                                            {templates.length > 0 && (
+                                                <div className="mb-4">
+                                                    <p className="text-[10px] font-bold text-slate-400 mb-2 uppercase tracking-wider">Template Tersimpan:</p>
+                                                    <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
+                                                        {templates.map((t, i) => (
+                                                            <button key={i} onClick={() => setMessage(t.content)} className="whitespace-nowrap px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:border-purple-500 hover:text-purple-600 transition-colors shadow-sm">{t.title}</button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div className="flex flex-wrap gap-2 mb-3 bg-slate-200/50 p-2 rounded-xl border border-slate-200">
+                                                <span className="text-xs font-bold text-slate-500 flex items-center mr-2 uppercase tracking-wider">Sisipkan:</span>
+                                                <button onClick={() => insertVariable('Panggilan')} className="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-lg font-bold shadow-sm">Panggilan</button>
+                                                <button onClick={() => insertVariable('Nama')} className="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-lg font-bold shadow-sm">Nama</button>
+                                                <button onClick={() => insertVariable('Alamat')} className="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-lg font-bold shadow-sm">Alamat</button>
+                                                <span className="ml-auto text-[10px] bg-slate-200 text-slate-500 px-2 py-1 rounded font-bold">SPINTAX: {'{A|B}'}</span>
+                                            </div>
+                                            <textarea id="message-textarea" value={message} onChange={(e) => setMessage(e.target.value)} disabled={isSending} className="w-full h-44 p-5 border border-slate-200 rounded-2xl focus:ring-4 focus:ring-purple-500/20 focus:border-purple-500 transition-all resize-none text-sm text-slate-700 bg-slate-50 shadow-inner leading-relaxed" placeholder="Ketik pesan..." />
+                                        </div>
+                                    </div>
+
+                                    <div className="lg:col-span-5 flex flex-col gap-6">
+                                        <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl shadow-sm border border-slate-200/60 p-7">
+                                            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-4"><div className="bg-orange-100 p-2 rounded-xl text-orange-600"><Icon name="fa-clock" size={20} /></div>Jeda Bergilir</h3>
+                                            <div className="space-y-3 mb-3">
+                                                {[ { id:1, val: delay1, set: setDelay1, color: 'orange' }, { id:2, val: delay2, set: setDelay2, color: 'indigo' }, { id:3, val: delay3, set: setDelay3, color: 'blue' } ].map(d => (
+                                                    <div key={d.id} className="flex items-center gap-3 bg-white/60 p-2 rounded-xl border border-slate-200/60">
+                                                        <div className={`w-6 h-6 rounded-full bg-${d.color}-100 text-${d.color}-600 flex items-center justify-center text-xs font-black shadow-inner`}>{d.id}</div>
+                                                        <input type="range" min="5" max="120" value={d.val} onChange={(e) => d.set(e.target.value)} className={`w-full accent-${d.color}-500`} />
+                                                        <div className="bg-white px-2 py-1 border border-slate-200 rounded-lg text-slate-700 font-bold min-w-[55px] text-center shadow-sm text-xs">{d.val}s</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl shadow-sm border border-slate-200/60 p-7">
+                                            <button onClick={startCampaign} disabled={isSending || contacts.length === 0} className={`w-full py-4 rounded-2xl font-black text-lg flex justify-center items-center gap-3 transition-all ${isSending ? 'bg-slate-300 text-slate-500' : contacts.length === 0 ? 'bg-slate-200 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-xl shadow-indigo-500/30 hover:-translate-y-1'}`}>
+                                                {isSending ? "Memproses..." : <><Icon name="fa-play" size={20} /> Mulai Pengiriman</>}
+                                            </button>
+                                        </div>
+
+                                        <div className="flex-1 bg-[#090b10] rounded-3xl shadow-xl border border-slate-700/50 flex flex-col relative min-h-[350px] overflow-hidden">
+                                            <div className="bg-[#151923] px-5 py-3.5 border-b border-slate-800 flex justify-between items-center z-10">
+                                                <div className="flex items-center gap-3"><Icon name="fa-terminal" size={16} className="text-green-500" /><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Terminal</span></div>
+                                            </div>
+                                            <div className="p-5 overflow-y-auto flex-1 font-mono text-xs leading-relaxed custom-scrollbar space-y-2">
+                                                {logs.length === 0 ? <div className="text-slate-600/50 text-center mt-10">System Standby...</div> : logs.map((log, idx) => (
+                                                    <div key={idx} className={`flex gap-3 items-start ${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-green-400' : log.type === 'processing' ? 'text-yellow-400' : 'text-slate-400'}`}>
+                                                        <span className="text-slate-600 shrink-0 font-bold">[{log.time}]</span>
+                                                        <span>{log.text}</span>
+                                                    </div>
+                                                ))}
+                                                <div ref={logEndRef} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'templates' && (
+                                <div>
+                                    <h2 className="text-3xl font-black text-slate-800 mb-8">Manajemen Template</h2>
+                                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                        <div className="lg:col-span-5">
+                                            <div className="bg-slate-100/90 rounded-3xl border border-slate-200/60 p-7">
+                                                <h3 className="text-lg font-bold mb-4">Buat Template Baru</h3>
+                                                <input type="text" value={newTemplateTitle} onChange={(e) => setNewTemplateTitle(e.target.value)} placeholder="Judul Template" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold mb-4 shadow-inner" />
+                                                <textarea value={newTemplateContent} onChange={(e) => setNewTemplateContent(e.target.value)} placeholder="Isi Pesan..." className="w-full h-44 p-4 bg-white border border-slate-200 rounded-xl text-sm mb-4 shadow-inner" />
+                                                <button onClick={handleSaveTemplate} className="w-full bg-indigo-600 text-white font-bold py-3.5 rounded-xl shadow-lg hover:-translate-y-0.5"><Icon name="fa-plus" size={18} /> Simpan</button>
+                                            </div>
+                                        </div>
+                                        <div className="lg:col-span-7 space-y-5">
+                                            {templates.map((t, i) => (
+                                                <div key={i} className="bg-slate-100/90 rounded-3xl border border-slate-200/60 p-6 relative">
+                                                    <div className="flex justify-between items-start mb-4">
+                                                        <h4 className="font-bold text-lg">{t.title}</h4>
+                                                        <button onClick={() => handleDeleteTemplate(t.title)} className="text-red-400 hover:text-red-600"><Icon name="fa-trash-can" size={18} /></button>
+                                                    </div>
+                                                    <div className="bg-white p-5 rounded-xl text-sm text-slate-600 shadow-inner whitespace-pre-wrap">{t.content}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'settings' && (
+                                <div className="max-w-4xl mx-auto">
+                                    <h2 className="text-3xl font-black text-slate-800 text-center mb-8">Pengaturan</h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="bg-slate-100/90 rounded-3xl p-8 border border-slate-200">
+                                            <h3 className="text-lg font-bold mb-4"><Icon name="fa-chart-line" size={20} className="text-indigo-600"/> Status Engine</h3>
+                                            <p className="text-sm text-slate-600 mb-6">Status mesin WAHA API (WhatsApp Web).</p>
+                                            <div className={`p-5 rounded-2xl border ${waConnected ? 'bg-green-50 border-green-200 text-green-700' : 'bg-indigo-50 border-indigo-100 text-indigo-700'}`}>
+                                                <p className="font-bold">{waConnected ? "AKTIF" : "STANDBY"}</p>
+                                            </div>
+                                        </div>
+                                        <div className="bg-slate-100/90 rounded-3xl p-8 border border-slate-200 text-center">
+                                            <h3 className="text-lg font-bold mb-4"><Icon name="fa-qrcode" size={20} className="text-green-600"/> Tautkan WhatsApp</h3>
+                                            {waConnected ? (
+                                                <div>
+                                                    <Icon name="fa-circle-check" size={56} className="text-green-500 mb-3" />
+                                                    <p className="font-bold text-green-700">WhatsApp Terhubung!</p>
+                                                    <button onClick={() => setWaConnected(false)} className="mt-4 bg-white text-red-500 px-4 py-2 rounded-xl shadow border">Putuskan Koneksi</button>
+                                                </div>
+                                            ) : (
+                                                <div>
+                                                    <div className="w-40 h-40 bg-white mx-auto border-2 border-dashed border-slate-300 rounded-2xl flex items-center justify-center mb-4">
+                                                        {showQR ? <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=Mock_Session" alt="QR" className="w-32 h-32"/> : <Icon name="fa-qrcode" size={40} className="text-slate-300"/>}
+                                                    </div>
+                                                    {!showQR ? (
+                                                        <button onClick={() => setShowQR(true)} className="bg-indigo-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg w-full">Generate QR</button>
+                                                    ) : (
+                                                        <button onClick={() => setWaConnected(true)} className="bg-green-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg w-full">Simulasi Scan Berhasil</button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
