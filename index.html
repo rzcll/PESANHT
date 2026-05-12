@@ -77,6 +77,11 @@
             const [newTemplateTitle, setNewTemplateTitle] = useState('');
             const [newTemplateContent, setNewTemplateContent] = useState('');
 
+            // State WAHA API Asli
+            const [wahaUrl, setWahaUrl] = useState('http://localhost:3000');
+            const [wahaSession, setWahaSession] = useState('default');
+            const [wahaStatusText, setWahaStatusText] = useState('Belum Terhubung');
+
             const [waConnected, setWaConnected] = useState(false);
             const [showQR, setShowQR] = useState(false);
 
@@ -105,6 +110,48 @@
                 }
             };
 
+            const fetchSettings = async (userStr) => {
+                try {
+                    const res = await fetch(GAS_URL + "?action=getSettings&username=" + encodeURIComponent(userStr));
+                    const config = await res.json();
+                    if (config.wahaUrl) setWahaUrl(config.wahaUrl);
+                    if (config.wahaSession) setWahaSession(config.wahaSession);
+                } catch (error) {
+                    console.error("Gagal memuat pengaturan WAHA dari database", error);
+                }
+            };
+
+            const checkWahaConnection = async () => {
+                if (!wahaUrl) return alert("URL WAHA API tidak boleh kosong.");
+                addLog(`Memeriksa koneksi ke Server WAHA di ${wahaUrl}...`, "info");
+                try {
+                    const res = await fetch(`${wahaUrl}/api/sessions/?all=true`);
+                    if (!res.ok) throw new Error("Koneksi ditolak oleh server.");
+                    const sessions = await res.json();
+                    
+                    const currentSession = sessions.find(s => s.name === wahaSession);
+                    if (currentSession) {
+                        if (currentSession.status === 'WORKING') {
+                            setWaConnected(true);
+                            setWahaStatusText('Terhubung (WORKING)');
+                            addLog(`[SUCCESS] Terhubung ke WAHA! Sesi: "${wahaSession}" siap digunakan.`, "success");
+                        } else {
+                            setWaConnected(false);
+                            setWahaStatusText(`Sesi: ${currentSession.status}`);
+                            addLog(`[WARNING] Sesi ditemukan tapi berstatus: ${currentSession.status}. Anda harus scan QR via dashboard bawaan WAHA.`, "processing");
+                        }
+                    } else {
+                        setWaConnected(false);
+                        setWahaStatusText('Sesi Tidak Ada');
+                        addLog(`[ERROR] Sesi "${wahaSession}" tidak ditemukan di server WAHA.`, "error");
+                    }
+                } catch (err) {
+                    setWaConnected(false);
+                    setWahaStatusText('Error Koneksi');
+                    addLog(`[ERROR] Gagal menyambung ke server WAHA API. Pastikan Docker WAHA sedang berjalan.`, "error");
+                }
+            };
+
             const handleLogin = async (e) => {
                 e.preventDefault();
                 if (loginInput.trim() !== '') {
@@ -120,6 +167,7 @@
                             setUsername(loginInput.trim());
                             setIsLoggedIn(true);
                             fetchTemplates(loginInput.trim());
+                            fetchSettings(loginInput.trim());
                         } else {
                             alert("Username tidak ditemukan di Google Spreadsheet!");
                         }
@@ -309,8 +357,27 @@
                     await new Promise(resolve => setTimeout(resolve, currentDelay * 1000));
 
                     try {
-                        // Dummy WAHA API execution
-                        if (Math.random() > 0.95) throw new Error("Nomor tidak aktif");
+                        if (!wahaUrl) throw new Error("Konfigurasi URL WAHA kosong. Periksa menu pengaturan.");
+                        
+                        // Eksekusi Asli ke WAHA API
+                        const response = await fetch(`${wahaUrl}/api/sendText`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                chatId: `${contact.phone.replace(/\D/g, '')}@c.us`,
+                                text: finalMessage,
+                                session: wahaSession
+                            })
+                        });
+
+                        if (!response.ok) {
+                            const errData = await response.json().catch(() => ({}));
+                            throw new Error(errData.message || `Error Server (Status: ${response.status})`);
+                        }
+
                         setContacts(prev => prev.map((c, idx) => idx === i ? { ...c, status: 'sent' } : c));
                         currentSent++;
                         addLog(`[SUCCESS] Terkirim: ${contact.phone}`, 'success');
@@ -358,6 +425,21 @@
                     addLog(`Template "${title}" dihapus.`, 'info');
                 } catch(error) {
                     addLog(`Gagal menghapus template.`, 'error');
+                }
+            };
+
+            const handleSaveSettings = async () => {
+                addLog(`Menyimpan konfigurasi WAHA ke database Cloud...`, 'processing');
+                try {
+                    await fetch(GAS_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action: 'saveSettings', username: username, wahaUrl: wahaUrl, wahaSession: wahaSession })
+                    });
+                    addLog(`Konfigurasi WAHA berhasil disimpan!`, 'success');
+                    alert("Pengaturan Server WAHA berhasil disimpan ke Spreadsheet!");
+                } catch(error) {
+                    addLog(`Gagal menyimpan konfigurasi WAHA.`, 'error');
                 }
             };
 
@@ -653,35 +735,54 @@
 
                             {activeTab === 'settings' && (
                                 <div className="max-w-4xl mx-auto">
-                                    <h2 className="text-3xl font-black text-slate-800 text-center mb-8">Pengaturan</h2>
+                                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-slate-200"><Icon name="fa-gear" size={32} className="text-slate-600" /></div>
+                                    <h2 className="text-3xl font-black text-slate-800 text-center mb-8">Pengaturan Engine WAHA</h2>
+                                    
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="bg-slate-100/90 rounded-3xl p-8 border border-slate-200">
-                                            <h3 className="text-lg font-bold mb-4"><Icon name="fa-chart-line" size={20} className="text-indigo-600"/> Status Engine</h3>
-                                            <p className="text-sm text-slate-600 mb-6">Status mesin WAHA API (WhatsApp Web).</p>
-                                            <div className={`p-5 rounded-2xl border ${waConnected ? 'bg-green-50 border-green-200 text-green-700' : 'bg-indigo-50 border-indigo-100 text-indigo-700'}`}>
-                                                <p className="font-bold">{waConnected ? "AKTIF" : "STANDBY"}</p>
+                                        <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl p-8 border border-slate-200 flex flex-col shadow-sm">
+                                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Icon name="fa-server" size={20} className="text-indigo-600"/> Konfigurasi Koneksi API</h3>
+                                            <p className="text-sm text-slate-600 mb-6">Masukkan alamat server Docker WAHA Anda beserta nama Sesi yang digunakan.</p>
+                                            
+                                            <div className="space-y-4 mb-6">
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">URL WAHA Endpoint</label>
+                                                    <input type="text" value={wahaUrl} onChange={(e) => setWahaUrl(e.target.value)} placeholder="http://localhost:3000" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold shadow-inner" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Nama Session Aktif</label>
+                                                    <input type="text" value={wahaSession} onChange={(e) => setWahaSession(e.target.value)} placeholder="default" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold shadow-inner" />
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-auto flex flex-col gap-3">
+                                                <button onClick={handleSaveSettings} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                                                    <Icon name="fa-cloud-arrow-up" size={18} /> Simpan URL ke Database
+                                                </button>
+                                                <button onClick={checkWahaConnection} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                                                    <Icon name="fa-plug" size={18} /> Hubungkan & Cek Status API
+                                                </button>
                                             </div>
                                         </div>
-                                        <div className="bg-slate-100/90 rounded-3xl p-8 border border-slate-200 text-center">
-                                            <h3 className="text-lg font-bold mb-4"><Icon name="fa-qrcode" size={20} className="text-green-600"/> Tautkan WhatsApp</h3>
-                                            {waConnected ? (
-                                                <div>
-                                                    <Icon name="fa-circle-check" size={56} className="text-green-500 mb-3" />
-                                                    <p className="font-bold text-green-700">WhatsApp Terhubung!</p>
-                                                    <button onClick={() => setWaConnected(false)} className="mt-4 bg-white text-red-500 px-4 py-2 rounded-xl shadow border">Putuskan Koneksi</button>
-                                                </div>
-                                            ) : (
-                                                <div>
-                                                    <div className="w-40 h-40 bg-white mx-auto border-2 border-dashed border-slate-300 rounded-2xl flex items-center justify-center mb-4">
-                                                        {showQR ? <img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=Mock_Session" alt="QR" className="w-32 h-32"/> : <Icon name="fa-qrcode" size={40} className="text-slate-300"/>}
-                                                    </div>
-                                                    {!showQR ? (
-                                                        <button onClick={() => setShowQR(true)} className="bg-indigo-600 text-white font-bold py-2 px-4 rounded-xl shadow-lg w-full">Generate QR</button>
-                                                    ) : (
-                                                        <button onClick={() => setWaConnected(true)} className="bg-green-500 text-white font-bold py-2 px-4 rounded-xl shadow-lg w-full">Simulasi Scan Berhasil</button>
-                                                    )}
-                                                </div>
-                                            )}
+                                        
+                                        <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl p-8 border border-slate-200 flex flex-col items-center justify-center text-center shadow-sm">
+                                            <h3 className="text-lg font-bold mb-2 w-full text-left flex items-center gap-2"><Icon name="fa-mobile-screen" size={20} className="text-green-600"/> Status Engine</h3>
+                                            <p className="text-xs text-slate-500 mb-6 w-full text-left">Status integrasi aplikasi Anda dengan Core WAHA API.</p>
+                                            
+                                            <div className={`w-full flex-1 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center p-6 transition-colors ${waConnected ? 'border-green-300 bg-green-50' : 'border-slate-300 bg-white'}`}>
+                                                {waConnected ? (
+                                                    <>
+                                                        <Icon name="fa-circle-check" size={56} className="text-green-500 mb-3" />
+                                                        <p className="font-black text-lg text-green-700">Terhubung & Siap!</p>
+                                                        <p className="text-sm font-bold text-green-600 mt-1 bg-green-100 px-3 py-1 rounded-full">{wahaStatusText}</p>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Icon name="fa-shield-halved" size={56} className="text-slate-300 mb-3" />
+                                                        <p className="font-bold text-slate-700">{wahaStatusText}</p>
+                                                        <p className="text-xs text-slate-500 mt-2 px-4">Lakukan pengecekan koneksi di samping untuk memverifikasi API Anda.</p>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
