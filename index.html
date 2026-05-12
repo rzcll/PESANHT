@@ -766,24 +766,27 @@
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl p-8 border border-slate-200 flex flex-col shadow-sm">
-                                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Icon name="fa-server" size={20} className="text-indigo-600"/> Konfigurasi Koneksi API</h3>
-                                            <p className="text-sm text-slate-600 mb-6">Masukkan alamat server Docker WAHA Anda beserta nama Sesi yang digunakan.</p>
+                                            <h3 className="text-lg font-bold mb-4 flex items-center gap-2"><Icon name="fa-server" size={20} className="text-indigo-600"/> Status API Sistem</h3>
+                                            <p className="text-sm text-slate-600 mb-6">Konfigurasi koneksi ditarik secara aman dari Cloud Database. Sistem siap dihubungkan ke Engine Pengirim Pesan.</p>
                                             
                                             <div className="space-y-4 mb-6">
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">URL WAHA Endpoint</label>
-                                                    <input type="text" value={wahaUrl} onChange={(e) => setWahaUrl(e.target.value)} placeholder="http://localhost:3000" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold shadow-inner" />
+                                                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-inner flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600"><Icon name="fa-cloud" size={18} /></div>
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cloud Server WAHA</p>
+                                                        <p className="text-sm font-bold text-slate-800">Terhubung (Hidden)</p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Nama Session Aktif</label>
-                                                    <input type="text" value={wahaSession} onChange={(e) => setWahaSession(e.target.value)} placeholder="default" className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold shadow-inner" />
+                                                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-inner flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600"><Icon name="fa-key" size={18} /></div>
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sesi Pengguna</p>
+                                                        <p className="text-sm font-bold text-slate-800">Aktif (Hidden)</p>
+                                                    </div>
                                                 </div>
                                             </div>
 
                                             <div className="mt-auto flex flex-col gap-3">
-                                                <button onClick={handleSaveSettings} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2">
-                                                    <Icon name="fa-cloud-arrow-up" size={18} /> Simpan URL ke Database
-                                                </button>
                                                 <button onClick={checkWahaConnection} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all hover:-translate-y-0.5 flex items-center justify-center gap-2">
                                                     <Icon name="fa-plug" size={18} /> Hubungkan & Cek Status API
                                                 </button>
@@ -792,7 +795,7 @@
                                         
                                         <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl p-8 border border-slate-200 flex flex-col items-center justify-center text-center shadow-sm">
                                             <h3 className="text-lg font-bold mb-2 w-full text-left flex items-center gap-2"><Icon name="fa-qrcode" size={20} className="text-green-600"/> Tautkan Pengirim (Scanner)</h3>
-                                            <p className="text-xs text-slate-500 mb-6 w-full text-left">Scan QR Code ini untuk menjadikan HP Anda sebagai pengirim pesan untuk sesi <b>{wahaSession}</b>.</p>
+                                            <p className="text-xs text-slate-500 mb-6 w-full text-left">Scan QR Code ini untuk menjadikan HP Anda sebagai pengirim pesan.</p>
                                             
                                             <div className={`w-full flex-1 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center p-6 transition-colors ${waConnected ? 'border-green-300 bg-green-50' : 'border-slate-300 bg-white'}`}>
                                                 {waConnected ? (
