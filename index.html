@@ -84,6 +84,7 @@
 
             const [waConnected, setWaConnected] = useState(false);
             const [showQR, setShowQR] = useState(false);
+            const [qrImageUrl, setQrImageUrl] = useState('');
 
             const fileInputRef = useRef(null);
             const epusInputRef = useRef(null);
@@ -121,6 +122,22 @@
                 }
             };
 
+            const startWahaSession = async () => {
+                addLog(`[AUTO] Sesi tidak ditemukan. Membuat sesi baru "${wahaSession}" di WAHA...`, "processing");
+                try {
+                    await fetch(`${wahaUrl}/api/sessions/start`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name: wahaSession })
+                    });
+                    addLog(`[INFO] Sesi dibuat. Mengambil QR Code...`, "info");
+                    // Tunggu 3 detik agar engine Docker WAHA selesai generate QR
+                    setTimeout(checkWahaConnection, 3000);
+                } catch (error) {
+                    addLog(`[ERROR] Gagal membuat sesi WAHA secara otomatis.`, "error");
+                }
+            };
+
             const checkWahaConnection = async () => {
                 if (!wahaUrl) return alert("URL WAHA API tidak boleh kosong.");
                 addLog(`Memeriksa koneksi ke Server WAHA di ${wahaUrl}...`, "info");
@@ -133,22 +150,31 @@
                     if (currentSession) {
                         if (currentSession.status === 'WORKING') {
                             setWaConnected(true);
+                            setShowQR(false);
                             setWahaStatusText('Terhubung (WORKING)');
                             addLog(`[SUCCESS] Terhubung ke WAHA! Sesi: "${wahaSession}" siap digunakan.`, "success");
+                        } else if (currentSession.status === 'SCAN_QR_CODE' || currentSession.status === 'STARTING') {
+                            setWaConnected(false);
+                            setWahaStatusText('Menunggu Scan QR');
+                            // Menarik gambar QR Code asli langsung dari Server WAHA
+                            setQrImageUrl(`${wahaUrl}/api/${wahaSession}/auth/qr?t=${new Date().getTime()}`);
+                            setShowQR(true);
+                            addLog(`[INFO] Sesi "${wahaSession}" butuh otentikasi. Silakan scan QR Code yang muncul.`, "processing");
                         } else {
                             setWaConnected(false);
+                            setShowQR(false);
                             setWahaStatusText(`Sesi: ${currentSession.status}`);
-                            addLog(`[WARNING] Sesi ditemukan tapi berstatus: ${currentSession.status}. Anda harus scan QR via dashboard bawaan WAHA.`, "processing");
+                            addLog(`[WARNING] Sesi ditemukan tapi berstatus: ${currentSession.status}.`, "processing");
                         }
                     } else {
-                        setWaConnected(false);
-                        setWahaStatusText('Sesi Tidak Ada');
-                        addLog(`[ERROR] Sesi "${wahaSession}" tidak ditemukan di server WAHA.`, "error");
+                        // SMART WAY: Jika session tidak ada, buat secara otomatis!
+                        startWahaSession();
                     }
                 } catch (err) {
                     setWaConnected(false);
-                    setWahaStatusText('Error Koneksi');
-                    addLog(`[ERROR] Gagal menyambung ke server WAHA API. Pastikan Docker WAHA sedang berjalan.`, "error");
+                    setShowQR(false);
+                    setWahaStatusText('Error Koneksi / CORS');
+                    addLog(`[ERROR] Gagal menyambung ke server WAHA API. Pastikan Docker WAHA berjalan dan CORS diizinkan.`, "error");
                 }
             };
 
@@ -765,21 +791,28 @@
                                         </div>
                                         
                                         <div className="bg-slate-100/90 backdrop-blur-xl rounded-3xl p-8 border border-slate-200 flex flex-col items-center justify-center text-center shadow-sm">
-                                            <h3 className="text-lg font-bold mb-2 w-full text-left flex items-center gap-2"><Icon name="fa-mobile-screen" size={20} className="text-green-600"/> Status Engine</h3>
-                                            <p className="text-xs text-slate-500 mb-6 w-full text-left">Status integrasi aplikasi Anda dengan Core WAHA API.</p>
+                                            <h3 className="text-lg font-bold mb-2 w-full text-left flex items-center gap-2"><Icon name="fa-qrcode" size={20} className="text-green-600"/> Tautkan Pengirim (Scanner)</h3>
+                                            <p className="text-xs text-slate-500 mb-6 w-full text-left">Scan QR Code ini untuk menjadikan HP Anda sebagai pengirim pesan untuk sesi <b>{wahaSession}</b>.</p>
                                             
                                             <div className={`w-full flex-1 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center p-6 transition-colors ${waConnected ? 'border-green-300 bg-green-50' : 'border-slate-300 bg-white'}`}>
                                                 {waConnected ? (
                                                     <>
                                                         <Icon name="fa-circle-check" size={56} className="text-green-500 mb-3" />
-                                                        <p className="font-black text-lg text-green-700">Terhubung & Siap!</p>
+                                                        <p className="font-black text-lg text-green-700">Nomor Terhubung!</p>
                                                         <p className="text-sm font-bold text-green-600 mt-1 bg-green-100 px-3 py-1 rounded-full">{wahaStatusText}</p>
+                                                    </>
+                                                ) : showQR ? (
+                                                    <>
+                                                        <img src={qrImageUrl} alt="WAHA QR Code" className="w-48 h-48 border border-slate-200 rounded-xl shadow-sm mb-3" />
+                                                        <p className="font-bold text-slate-700 animate-pulse">Menunggu Scan...</p>
+                                                        <p className="text-xs text-slate-500 mt-1">Buka WhatsApp > Perangkat Tertaut > Tautkan</p>
+                                                        <button onClick={checkWahaConnection} className="mt-4 text-xs font-bold bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-200">Refresh Status / QR</button>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <Icon name="fa-shield-halved" size={56} className="text-slate-300 mb-3" />
+                                                        <Icon name="fa-qrcode" size={56} className="text-slate-300 mb-3" />
                                                         <p className="font-bold text-slate-700">{wahaStatusText}</p>
-                                                        <p className="text-xs text-slate-500 mt-2 px-4">Lakukan pengecekan koneksi di samping untuk memverifikasi API Anda.</p>
+                                                        <p className="text-xs text-slate-500 mt-2 px-4">Klik "Hubungkan & Cek Status API" di samping untuk memunculkan Live QR Code.</p>
                                                     </>
                                                 )}
                                             </div>
